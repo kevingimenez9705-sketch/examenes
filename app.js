@@ -5,8 +5,8 @@
 // ------------------------------------------------------------------
 // CONFIG SUPABASE - reemplazar con las credenciales del proyecto
 // ------------------------------------------------------------------
-const SUPABASE_URL = "https://TU-PROYECTO.supabase.co";
-const SUPABASE_ANON_KEY = "TU-ANON-KEY";
+const SUPABASE_URL = "https://quzindlkseomlnyfyuzf.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1emluZGxrc2VvbWxueWZ5dXpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0NTA0NzksImV4cCI6MjA5OTAyNjQ3OX0.x3obCv72sfBMtzwxn7NU_rQ2djufLkWnikPlvRpZ1Hc";
 const TABLE = "examenes_ascenso";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
