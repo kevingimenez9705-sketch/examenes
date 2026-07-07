@@ -10,7 +10,14 @@ const SUPABASE_URL = "https://TU-PROYECTO.supabase.co";
 const SUPABASE_ANON_KEY = "TU-ANON-KEY";
 const TABLE = "examenes_ascenso";
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let supabaseClient;
+try {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch (err) {
+  console.error("Error creando el cliente de Supabase:", err);
+  document.getElementById("app").innerHTML =
+    `<div class="empty-state">No se pudo conectar con Supabase. Revisá SUPABASE_URL y SUPABASE_ANON_KEY en app.js.</div>`;
+}
 
 // ------------------------------------------------------------------
 // ESTADO
@@ -37,25 +44,40 @@ const brandPill = document.getElementById("brandPill");
 async function fetchAll() {
   state.loading = true;
   render();
+
+  // Examenes: si falla, sí es un problema (mostramos aviso).
   try {
-    const [examenes, regionales, zonales, locales] = await Promise.all([
-      supabaseClient.from(TABLE).select("*").order("fecha_examen", { ascending: false }),
+    const { data, error } = await supabaseClient
+      .from(TABLE)
+      .select("*")
+      .order("fecha_examen", { ascending: false });
+    if (error) throw error;
+    state.records = data || [];
+  } catch (err) {
+    console.error("Error cargando examenes:", err);
+    state.records = [];
+    showToast("No se pudieron cargar los exámenes. Revisá la configuración de Supabase.");
+  }
+
+  // Estructura dinamica (regionales/zonales/locales agregados a futuro):
+  // si las tablas todavia no existen o fallan, no bloquea la app —
+  // el organigrama base de data.js se muestra igual.
+  try {
+    const [regionales, zonales, locales] = await Promise.all([
       supabaseClient.from("regionales").select("*").order("orden", { ascending: true }),
       supabaseClient.from("zonales").select("*").order("orden", { ascending: true }),
       supabaseClient.from("locales").select("*").order("orden", { ascending: true })
     ]);
-    if (examenes.error) throw examenes.error;
-    if (regionales.error) throw regionales.error;
-    if (zonales.error) throw zonales.error;
-    if (locales.error) throw locales.error;
-    state.records = examenes.data || [];
-    state.regionales = regionales.data || [];
-    state.zonales = zonales.data || [];
-    state.locales = locales.data || [];
+    state.regionales = regionales.error ? [] : (regionales.data || []);
+    state.zonales = zonales.error ? [] : (zonales.data || []);
+    state.locales = locales.error ? [] : (locales.data || []);
   } catch (err) {
-    console.error("Error cargando datos:", err);
-    showToast("No se pudieron cargar los datos. Revisá la configuracion de Supabase.");
+    console.warn("No se pudo leer la estructura dinámica (regionales/zonales/locales):", err);
+    state.regionales = [];
+    state.zonales = [];
+    state.locales = [];
   }
+
   state.loading = false;
   render();
 }
@@ -73,16 +95,36 @@ async function insertRecord(payload) {
 }
 
 // ------------------------------------------------------------------
-// ESTRUCTURA: getters ordenados
+// ESTRUCTURA: getters hibridos (base estatica de data.js + agregados
+// dinamicos guardados en Supabase). Los items estaticos tienen id:null
+// y no muestran boton de eliminar; los dinamicos si.
 // ------------------------------------------------------------------
 function getRegionales(marcaKey) {
-  return state.regionales.filter(r => r.marca === marcaKey);
+  const marca = ORG_DATA[marcaKey];
+  const estaticos = (marca.regionales || []).map(r => ({
+    id: null,
+    nombre: r.nombre,
+    cargo_extra: r.cargoExtra || null
+  }));
+  const dinamicos = state.regionales.filter(r => r.marca === marcaKey);
+  return [...estaticos, ...dinamicos];
 }
+
 function getZonales(marcaKey, regionalNombre) {
-  return state.zonales.filter(z => z.marca === marcaKey && z.regional === regionalNombre);
+  const marca = ORG_DATA[marcaKey];
+  const regEstatico = (marca.regionales || []).find(r => r.nombre === regionalNombre);
+  const estaticos = (regEstatico?.zonales || []).map(z => ({ id: null, nombre: z.nombre }));
+  const dinamicos = state.zonales.filter(z => z.marca === marcaKey && z.regional === regionalNombre);
+  return [...estaticos, ...dinamicos];
 }
+
 function getLocales(marcaKey, regionalNombre, zonalNombre) {
-  return state.locales.filter(l => l.marca === marcaKey && l.regional === regionalNombre && l.zonal === zonalNombre);
+  const marca = ORG_DATA[marcaKey];
+  const regEstatico = (marca.regionales || []).find(r => r.nombre === regionalNombre);
+  const zonalEstatico = regEstatico?.zonales?.find(z => z.nombre === zonalNombre);
+  const estaticos = (zonalEstatico?.locales || []).map(nombre => ({ id: null, nombre }));
+  const dinamicos = state.locales.filter(l => l.marca === marcaKey && l.regional === regionalNombre && l.zonal === zonalNombre);
+  return [...estaticos, ...dinamicos];
 }
 
 // ------------------------------------------------------------------
@@ -371,9 +413,10 @@ function renderRegionales() {
   const regionales = getRegionales(marca.key);
   const cards = regionales.map(reg => {
     const filter = { marca: marca.key, regional: reg.nombre };
+    const delBtn = reg.id ? deleteBtnHtml(`deleteRegional('${reg.id}', '${escapeHtml(reg.nombre)}', '${marca.key}')`) : "";
     return `
       <div class="card" onclick="selectRegional('${escapeHtml(reg.nombre)}')">
-        ${deleteBtnHtml(`deleteRegional('${reg.id}', '${escapeHtml(reg.nombre)}', '${marca.key}')`)}
+        ${delBtn}
         ${cardIconHtml("🧭", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(reg.nombre)}</h3>
         <div class="sub">GTE Regional${reg.cargo_extra ? " · " + escapeHtml(reg.cargo_extra) : ""}</div>
@@ -408,9 +451,10 @@ function renderZonales() {
   const cards = zonales.map(z => {
     const filter = { marca: marca.key, regional: state.regional, zonal: z.nombre };
     const nLocales = getLocales(marca.key, state.regional, z.nombre).length;
+    const delBtn = z.id ? deleteBtnHtml(`deleteZonal('${z.id}', '${escapeHtml(z.nombre)}', '${marca.key}', '${escapeHtml(state.regional)}')`) : "";
     return `
       <div class="card" onclick="selectZonal('${escapeHtml(z.nombre)}')">
-        ${deleteBtnHtml(`deleteZonal('${z.id}', '${escapeHtml(z.nombre)}', '${marca.key}', '${escapeHtml(state.regional)}')`)}
+        ${delBtn}
         ${cardIconHtml("📍", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(z.nombre)}</h3>
         <div class="sub">${nLocales} local(es)</div>
@@ -444,9 +488,10 @@ function renderLocales() {
   updateNavCrumb();
   const cards = locales.map(loc => {
     const filter = { marca: marca.key, regional: state.regional, zonal: state.zonal, local: loc.nombre };
+    const delBtn = loc.id ? deleteBtnHtml(`deleteLocal('${loc.id}', '${escapeHtml(loc.nombre)}')`) : "";
     return `
       <div class="card" onclick="selectLocal('${escapeHtml(loc.nombre)}')">
-        ${deleteBtnHtml(`deleteLocal('${loc.id}', '${escapeHtml(loc.nombre)}')`)}
+        ${delBtn}
         ${cardIconHtml("🏬", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(loc.nombre)}</h3>
         ${miniStatsHtml(filter)}
@@ -659,4 +704,6 @@ function render() {
 // ------------------------------------------------------------------
 // INIT
 // ------------------------------------------------------------------
-fetchAll();
+if (supabaseClient) {
+  fetchAll();
+}
