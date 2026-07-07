@@ -5,8 +5,8 @@
 // ------------------------------------------------------------------
 // CONFIG SUPABASE - reemplazar con las credenciales del proyecto
 // ------------------------------------------------------------------
-const SUPABASE_URL = "https://quzindlkseomlnyfyuzf.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1emluZGxrc2VvbWxueWZ5dXpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0NTA0NzksImV4cCI6MjA5OTAyNjQ3OX0.x3obCv72sfBMtzwxn7NU_rQ2djufLkWnikPlvRpZ1Hc";
+const SUPABASE_URL = "https://TU-PROYECTO.supabase.co";
+const SUPABASE_ANON_KEY = "TU-ANON-KEY";
 const TABLE = "examenes_ascenso";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -112,8 +112,8 @@ function escapeHtml(str) {
 
 function setBrandTheme(marcaKey) {
   const marca = marcaKey ? ORG_DATA[marcaKey] : null;
-  const accent = marca ? marca.color : "#333";
-  const accentLight = marca ? marca.colorClaro : "#eee";
+  const accent = marca ? marca.color : "#5b6bd6";
+  const accentLight = marca ? marca.colorClaro : "#e7e9fc";
   document.documentElement.style.setProperty("--accent", accent);
   document.documentElement.style.setProperty("--accent-light", accentLight);
   if (marca) {
@@ -122,6 +122,34 @@ function setBrandTheme(marcaKey) {
   } else {
     brandPill.style.display = "none";
   }
+}
+
+function updateNavCrumb() {
+  const navCrumb = document.getElementById("navCrumb");
+  const parts = ["<b>Campus</b>", "Ascensos"];
+  if (state.marca) parts.push(ORG_DATA[state.marca].nombre);
+  if (state.regional) parts.push(state.regional);
+  if (state.zonal) parts.push(state.zonal);
+  if (state.local) parts.push(state.local);
+  navCrumb.innerHTML = parts.join(" &gt; ");
+}
+
+function heroHtml({ icon, title, sub, accentWord }) {
+  const titleHtml = accentWord
+    ? title.replace(accentWord, `<span class="accent-word">${accentWord}</span>`)
+    : title;
+  return `
+    <div class="hero">
+      <div class="hero-icon">${icon}</div>
+      <div>
+        <h2>${titleHtml}</h2>
+        <div class="hero-sub">${sub}</div>
+      </div>
+    </div>`;
+}
+
+function cardIconHtml(text, accent, accentLight) {
+  return `<div class="card-icon" style="background:${accentLight};color:${accent}">${text}</div>`;
 }
 
 function showToast(msg) {
@@ -164,19 +192,27 @@ function renderBreadcrumb() {
 // ------------------------------------------------------------------
 function renderMarcas() {
   setBrandTheme(null);
+  updateNavCrumb();
   const cards = Object.values(ORG_DATA).map(marca => {
     const filter = { marca: marca.key };
     return `
-      <div class="card" style="border-left-color:${marca.color}" onclick="selectMarca('${marca.key}')">
+      <div class="card" style="--card-accent:${marca.color};--card-accent-light:${marca.colorClaro}" onclick="selectMarca('${marca.key}')">
+        ${cardIconHtml(marca.sigla, marca.color, marca.colorClaro)}
         <h3>${escapeHtml(marca.nombre)}</h3>
         <div class="sub">${escapeHtml(marca.comercial.nombre)} · ${escapeHtml(marca.comercial.cargo)}</div>
         ${miniStatsHtml(filter)}
+        <div class="card-link">Ver regionales →</div>
       </div>`;
   }).join("");
 
   root.innerHTML = `
-    ${renderBreadcrumb()}
-    <h2>Elegí una marca</h2>
+    ${heroHtml({
+      icon: "🎓",
+      title: "Campus de Ascensos",
+      accentWord: "Ascensos",
+      sub: "Elegí una marca para ver su organigrama y cargar exámenes de ascenso"
+    })}
+    <div class="section-label">Marcas</div>
     <div class="grid">${cards}</div>
   `;
 }
@@ -188,20 +224,29 @@ function selectMarca(marcaKey) {
 function renderRegionales() {
   const marca = ORG_DATA[state.marca];
   setBrandTheme(state.marca);
+  updateNavCrumb();
   const cards = marca.regionales.map(reg => {
     const filter = { marca: marca.key, regional: reg.nombre };
     return `
       <div class="card" onclick="selectRegional('${escapeHtml(reg.nombre)}')">
+        ${cardIconHtml("🧭", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(reg.nombre)}</h3>
         <div class="sub">GTE Regional${reg.cargoExtra ? " · " + escapeHtml(reg.cargoExtra) : ""}</div>
         ${miniStatsHtml(filter)}
+        <div class="card-link">Ver zonales →</div>
       </div>`;
   }).join("");
 
   root.innerHTML = `
     ${renderBreadcrumb()}
+    ${heroHtml({
+      icon: marca.sigla,
+      title: `Organigrama ${marca.nombre}`,
+      accentWord: marca.nombre,
+      sub: `${escapeHtml(marca.comercial.nombre)} · ${escapeHtml(marca.comercial.cargo)} · ${marca.regionales.length} regionales`
+    })}
     ${summaryChipsHtml({ marca: marca.key })}
-    <h2>Regionales — ${escapeHtml(marca.nombre)}</h2>
+    <div class="section-label">Regionales</div>
     <div class="grid">${cards}</div>
   `;
 }
@@ -213,20 +258,29 @@ function selectRegional(nombre) {
 function renderZonales() {
   const marca = ORG_DATA[state.marca];
   const regional = marca.regionales.find(r => r.nombre === state.regional);
+  updateNavCrumb();
   const cards = regional.zonales.map(z => {
     const filter = { marca: marca.key, regional: regional.nombre, zonal: z.nombre };
     return `
       <div class="card" onclick="selectZonal('${escapeHtml(z.nombre)}')">
+        ${cardIconHtml("📍", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(z.nombre)}</h3>
         <div class="sub">${z.locales.length} locales</div>
         ${miniStatsHtml(filter)}
+        <div class="card-link">Ver locales →</div>
       </div>`;
   }).join("");
 
   root.innerHTML = `
     ${renderBreadcrumb()}
+    ${heroHtml({
+      icon: "🧭",
+      title: regional.nombre,
+      accentWord: regional.nombre,
+      sub: `Regional · ${escapeHtml(marca.nombre)} · ${regional.zonales.length} zonales`
+    })}
     ${summaryChipsHtml({ marca: marca.key, regional: regional.nombre })}
-    <h2>Zonales — ${escapeHtml(regional.nombre)}</h2>
+    <div class="section-label">Zonales</div>
     <div class="grid">${cards}</div>
   `;
 }
@@ -239,19 +293,28 @@ function renderLocales() {
   const marca = ORG_DATA[state.marca];
   const regional = marca.regionales.find(r => r.nombre === state.regional);
   const zonal = regional.zonales.find(z => z.nombre === state.zonal);
+  updateNavCrumb();
   const cards = zonal.locales.map(local => {
     const filter = { marca: marca.key, regional: regional.nombre, zonal: zonal.nombre, local };
     return `
       <div class="card" onclick="selectLocal('${escapeHtml(local)}')">
+        ${cardIconHtml("🏬", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(local)}</h3>
         ${miniStatsHtml(filter)}
+        <div class="card-link">Cargar / ver exámenes →</div>
       </div>`;
   }).join("");
 
   root.innerHTML = `
     ${renderBreadcrumb()}
+    ${heroHtml({
+      icon: "📍",
+      title: zonal.nombre,
+      accentWord: zonal.nombre,
+      sub: `Zonal · ${escapeHtml(regional.nombre)} · ${escapeHtml(marca.nombre)} · ${zonal.locales.length} locales`
+    })}
     ${summaryChipsHtml({ marca: marca.key, regional: regional.nombre, zonal: zonal.nombre })}
-    <h2>Locales — ${escapeHtml(zonal.nombre)}</h2>
+    <div class="section-label">Locales</div>
     <div class="grid">${cards}</div>
   `;
 }
@@ -284,11 +347,18 @@ function renderLocalDetail() {
       <tbody>${tableRows}</tbody>
     </table>` : `<div class="empty-state">Todavía no hay exámenes cargados para este local.</div>`;
 
+  updateNavCrumb();
   root.innerHTML = `
     ${renderBreadcrumb()}
+    ${heroHtml({
+      icon: "🏬",
+      title: state.local,
+      accentWord: state.local,
+      sub: `${escapeHtml(state.zonal)} · ${escapeHtml(state.regional)} · ${escapeHtml(marca.nombre)}`
+    })}
     ${summaryChipsHtml(filter)}
     <div class="local-header">
-      <h2 style="margin:0">${escapeHtml(state.local)}</h2>
+      <div class="section-label" style="margin:0">Exámenes cargados</div>
       <button class="btn" onclick="openModal()">+ Cargar examen</button>
     </div>
     ${tableHtml}
