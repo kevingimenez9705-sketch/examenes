@@ -1,6 +1,7 @@
 // app.js
 // Campus de Ascensos: navegacion Marca > Regional > Zonal > Local
-// + carga y resumen de examenes de ascenso (Supabase)
+// + carga y resumen de examenes de ascenso, + alta/baja de regionales/zonales/locales
+// Todo (estructura + examenes) vive en Supabase; data.js solo tiene metadata de marca.
 
 // ------------------------------------------------------------------
 // CONFIG SUPABASE - reemplazar con las credenciales del proyecto
@@ -21,6 +22,9 @@ const state = {
   zonal: null,           // nombre
   local: null,           // nombre
   records: [],           // cache de examenes_ascenso
+  regionales: [],        // cache tabla regionales
+  zonales: [],           // cache tabla zonales
+  locales: [],           // cache tabla locales
   loading: true
 };
 
@@ -30,19 +34,26 @@ const brandPill = document.getElementById("brandPill");
 // ------------------------------------------------------------------
 // CARGA DE DATOS
 // ------------------------------------------------------------------
-async function fetchAllRecords() {
+async function fetchAll() {
   state.loading = true;
   render();
   try {
-    const { data, error } = await supabaseClient
-      .from(TABLE)
-      .select("*")
-      .order("fecha_examen", { ascending: false });
-    if (error) throw error;
-    state.records = data || [];
+    const [examenes, regionales, zonales, locales] = await Promise.all([
+      supabaseClient.from(TABLE).select("*").order("fecha_examen", { ascending: false }),
+      supabaseClient.from("regionales").select("*").order("orden", { ascending: true }),
+      supabaseClient.from("zonales").select("*").order("orden", { ascending: true }),
+      supabaseClient.from("locales").select("*").order("orden", { ascending: true })
+    ]);
+    if (examenes.error) throw examenes.error;
+    if (regionales.error) throw regionales.error;
+    if (zonales.error) throw zonales.error;
+    if (locales.error) throw locales.error;
+    state.records = examenes.data || [];
+    state.regionales = regionales.data || [];
+    state.zonales = zonales.data || [];
+    state.locales = locales.data || [];
   } catch (err) {
-    console.error("Error cargando examenes:", err);
-    state.records = [];
+    console.error("Error cargando datos:", err);
     showToast("No se pudieron cargar los datos. Revisá la configuracion de Supabase.");
   }
   state.loading = false;
@@ -56,9 +67,127 @@ async function insertRecord(payload) {
     showToast("Error al guardar el examen.");
     return false;
   }
-  await fetchAllRecords();
+  await fetchAll();
   showToast("Examen cargado correctamente.");
   return true;
+}
+
+// ------------------------------------------------------------------
+// ESTRUCTURA: getters ordenados
+// ------------------------------------------------------------------
+function getRegionales(marcaKey) {
+  return state.regionales.filter(r => r.marca === marcaKey);
+}
+function getZonales(marcaKey, regionalNombre) {
+  return state.zonales.filter(z => z.marca === marcaKey && z.regional === regionalNombre);
+}
+function getLocales(marcaKey, regionalNombre, zonalNombre) {
+  return state.locales.filter(l => l.marca === marcaKey && l.regional === regionalNombre && l.zonal === zonalNombre);
+}
+
+// ------------------------------------------------------------------
+// ESTRUCTURA: alta / baja
+// ------------------------------------------------------------------
+async function addRegional(marcaKey) {
+  openNameModal({
+    title: "Agregar regional",
+    label: "Nombre del regional",
+    placeholder: "Ej: Nuevo Nombre Apellido",
+    onSubmit: async (nombre) => {
+      const orden = getRegionales(marcaKey).length;
+      const { error } = await supabaseClient.from("regionales").insert({ marca: marcaKey, nombre, orden });
+      if (error) { console.error(error); showToast("Error al agregar el regional."); return false; }
+      await fetchAll();
+      showToast("Regional agregado.");
+      return true;
+    }
+  });
+}
+
+async function deleteRegional(id, nombre, marcaKey) {
+  const zonalesHijos = getZonales(marcaKey, nombre);
+  const msg = zonalesHijos.length
+    ? `"${nombre}" tiene ${zonalesHijos.length} zonal(es) con sus locales. Se van a eliminar también. ¿Continuar?`
+    : `¿Eliminar el regional "${nombre}"?`;
+  if (!confirm(msg)) return;
+
+  try {
+    const zonalNombres = zonalesHijos.map(z => z.nombre);
+    if (zonalNombres.length) {
+      await supabaseClient.from("locales").delete().eq("marca", marcaKey).eq("regional", nombre);
+      await supabaseClient.from("zonales").delete().eq("marca", marcaKey).eq("regional", nombre);
+    }
+    await supabaseClient.from("regionales").delete().eq("id", id);
+    await fetchAll();
+    showToast("Regional eliminado.");
+  } catch (err) {
+    console.error(err);
+    showToast("Error al eliminar el regional.");
+  }
+}
+
+async function addZonal(marcaKey, regionalNombre) {
+  openNameModal({
+    title: "Agregar zonal",
+    label: "Nombre del zonal",
+    placeholder: "Ej: Nombre Apellido",
+    onSubmit: async (nombre) => {
+      const orden = getZonales(marcaKey, regionalNombre).length;
+      const { error } = await supabaseClient.from("zonales").insert({ marca: marcaKey, regional: regionalNombre, nombre, orden });
+      if (error) { console.error(error); showToast("Error al agregar el zonal."); return false; }
+      await fetchAll();
+      showToast("Zonal agregado.");
+      return true;
+    }
+  });
+}
+
+async function deleteZonal(id, nombre, marcaKey, regionalNombre) {
+  const localesHijos = getLocales(marcaKey, regionalNombre, nombre);
+  const msg = localesHijos.length
+    ? `"${nombre}" tiene ${localesHijos.length} local(es). Se van a eliminar también. ¿Continuar?`
+    : `¿Eliminar el zonal "${nombre}"?`;
+  if (!confirm(msg)) return;
+
+  try {
+    if (localesHijos.length) {
+      await supabaseClient.from("locales").delete().eq("marca", marcaKey).eq("regional", regionalNombre).eq("zonal", nombre);
+    }
+    await supabaseClient.from("zonales").delete().eq("id", id);
+    await fetchAll();
+    showToast("Zonal eliminado.");
+  } catch (err) {
+    console.error(err);
+    showToast("Error al eliminar el zonal.");
+  }
+}
+
+async function addLocal(marcaKey, regionalNombre, zonalNombre) {
+  openNameModal({
+    title: "Agregar local",
+    label: "Nombre del local",
+    placeholder: "Ej: Barrio / Ciudad",
+    onSubmit: async (nombre) => {
+      const orden = getLocales(marcaKey, regionalNombre, zonalNombre).length;
+      const { error } = await supabaseClient.from("locales").insert({ marca: marcaKey, regional: regionalNombre, zonal: zonalNombre, nombre, orden });
+      if (error) { console.error(error); showToast("Error al agregar el local."); return false; }
+      await fetchAll();
+      showToast("Local agregado.");
+      return true;
+    }
+  });
+}
+
+async function deleteLocal(id, nombre) {
+  if (!confirm(`¿Eliminar el local "${nombre}"? Los exámenes ya cargados para este local no se borran, pero quedan sin local visible en el árbol.`)) return;
+  try {
+    await supabaseClient.from("locales").delete().eq("id", id);
+    await fetchAll();
+    showToast("Local eliminado.");
+  } catch (err) {
+    console.error(err);
+    showToast("Error al eliminar el local.");
+  }
 }
 
 // ------------------------------------------------------------------
@@ -152,6 +281,20 @@ function cardIconHtml(text, accent, accentLight) {
   return `<div class="card-icon" style="background:${accentLight};color:${accent}">${text}</div>`;
 }
 
+function deleteBtnHtml(onclickExpr) {
+  return `<button type="button" class="card-delete" title="Eliminar" onclick="event.stopPropagation(); ${onclickExpr}">×</button>`;
+}
+
+function addCardHtml(label, onclickExpr) {
+  return `
+    <div class="card add-card" onclick="${onclickExpr}">
+      <div class="add-card-inner">
+        <div class="add-icon">+</div>
+        <div>${escapeHtml(label)}</div>
+      </div>
+    </div>`;
+}
+
 function showToast(msg) {
   const el = document.createElement("div");
   el.className = "toast";
@@ -213,7 +356,7 @@ function renderMarcas() {
       sub: "Elegí una marca para ver su organigrama y cargar exámenes de ascenso"
     })}
     <div class="section-label">Marcas</div>
-    <div class="grid">${cards}</div>
+    <div class="grid grid-center">${cards}</div>
   `;
 }
 
@@ -225,17 +368,20 @@ function renderRegionales() {
   const marca = ORG_DATA[state.marca];
   setBrandTheme(state.marca);
   updateNavCrumb();
-  const cards = marca.regionales.map(reg => {
+  const regionales = getRegionales(marca.key);
+  const cards = regionales.map(reg => {
     const filter = { marca: marca.key, regional: reg.nombre };
     return `
       <div class="card" onclick="selectRegional('${escapeHtml(reg.nombre)}')">
+        ${deleteBtnHtml(`deleteRegional('${reg.id}', '${escapeHtml(reg.nombre)}', '${marca.key}')`)}
         ${cardIconHtml("🧭", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(reg.nombre)}</h3>
-        <div class="sub">GTE Regional${reg.cargoExtra ? " · " + escapeHtml(reg.cargoExtra) : ""}</div>
+        <div class="sub">GTE Regional${reg.cargo_extra ? " · " + escapeHtml(reg.cargo_extra) : ""}</div>
         ${miniStatsHtml(filter)}
         <div class="card-link">Ver zonales →</div>
       </div>`;
   }).join("");
+  const addCard = addCardHtml("Agregar regional", `addRegional('${marca.key}')`);
 
   root.innerHTML = `
     ${renderBreadcrumb()}
@@ -243,11 +389,11 @@ function renderRegionales() {
       icon: marca.sigla,
       title: `Organigrama ${marca.nombre}`,
       accentWord: marca.nombre,
-      sub: `${escapeHtml(marca.comercial.nombre)} · ${escapeHtml(marca.comercial.cargo)} · ${marca.regionales.length} regionales`
+      sub: `${escapeHtml(marca.comercial.nombre)} · ${escapeHtml(marca.comercial.cargo)} · ${regionales.length} regionales`
     })}
     ${summaryChipsHtml({ marca: marca.key })}
     <div class="section-label">Regionales</div>
-    <div class="grid">${cards}</div>
+    <div class="grid">${cards}${addCard}</div>
   `;
 }
 
@@ -257,31 +403,34 @@ function selectRegional(nombre) {
 
 function renderZonales() {
   const marca = ORG_DATA[state.marca];
-  const regional = marca.regionales.find(r => r.nombre === state.regional);
+  const zonales = getZonales(marca.key, state.regional);
   updateNavCrumb();
-  const cards = regional.zonales.map(z => {
-    const filter = { marca: marca.key, regional: regional.nombre, zonal: z.nombre };
+  const cards = zonales.map(z => {
+    const filter = { marca: marca.key, regional: state.regional, zonal: z.nombre };
+    const nLocales = getLocales(marca.key, state.regional, z.nombre).length;
     return `
       <div class="card" onclick="selectZonal('${escapeHtml(z.nombre)}')">
+        ${deleteBtnHtml(`deleteZonal('${z.id}', '${escapeHtml(z.nombre)}', '${marca.key}', '${escapeHtml(state.regional)}')`)}
         ${cardIconHtml("📍", marca.color, marca.colorClaro)}
         <h3>${escapeHtml(z.nombre)}</h3>
-        <div class="sub">${z.locales.length} locales</div>
+        <div class="sub">${nLocales} local(es)</div>
         ${miniStatsHtml(filter)}
         <div class="card-link">Ver locales →</div>
       </div>`;
   }).join("");
+  const addCard = addCardHtml("Agregar zonal", `addZonal('${marca.key}', '${escapeHtml(state.regional)}')`);
 
   root.innerHTML = `
     ${renderBreadcrumb()}
     ${heroHtml({
       icon: "🧭",
-      title: regional.nombre,
-      accentWord: regional.nombre,
-      sub: `Regional · ${escapeHtml(marca.nombre)} · ${regional.zonales.length} zonales`
+      title: state.regional,
+      accentWord: state.regional,
+      sub: `Regional · ${escapeHtml(marca.nombre)} · ${zonales.length} zonales`
     })}
-    ${summaryChipsHtml({ marca: marca.key, regional: regional.nombre })}
+    ${summaryChipsHtml({ marca: marca.key, regional: state.regional })}
     <div class="section-label">Zonales</div>
-    <div class="grid">${cards}</div>
+    <div class="grid">${cards}${addCard}</div>
   `;
 }
 
@@ -291,31 +440,32 @@ function selectZonal(nombre) {
 
 function renderLocales() {
   const marca = ORG_DATA[state.marca];
-  const regional = marca.regionales.find(r => r.nombre === state.regional);
-  const zonal = regional.zonales.find(z => z.nombre === state.zonal);
+  const locales = getLocales(marca.key, state.regional, state.zonal);
   updateNavCrumb();
-  const cards = zonal.locales.map(local => {
-    const filter = { marca: marca.key, regional: regional.nombre, zonal: zonal.nombre, local };
+  const cards = locales.map(loc => {
+    const filter = { marca: marca.key, regional: state.regional, zonal: state.zonal, local: loc.nombre };
     return `
-      <div class="card" onclick="selectLocal('${escapeHtml(local)}')">
+      <div class="card" onclick="selectLocal('${escapeHtml(loc.nombre)}')">
+        ${deleteBtnHtml(`deleteLocal('${loc.id}', '${escapeHtml(loc.nombre)}')`)}
         ${cardIconHtml("🏬", marca.color, marca.colorClaro)}
-        <h3>${escapeHtml(local)}</h3>
+        <h3>${escapeHtml(loc.nombre)}</h3>
         ${miniStatsHtml(filter)}
         <div class="card-link">Cargar / ver exámenes →</div>
       </div>`;
   }).join("");
+  const addCard = addCardHtml("Agregar local", `addLocal('${marca.key}', '${escapeHtml(state.regional)}', '${escapeHtml(state.zonal)}')`);
 
   root.innerHTML = `
     ${renderBreadcrumb()}
     ${heroHtml({
       icon: "📍",
-      title: zonal.nombre,
-      accentWord: zonal.nombre,
-      sub: `Zonal · ${escapeHtml(regional.nombre)} · ${escapeHtml(marca.nombre)} · ${zonal.locales.length} locales`
+      title: state.zonal,
+      accentWord: state.zonal,
+      sub: `Zonal · ${escapeHtml(state.regional)} · ${escapeHtml(marca.nombre)} · ${locales.length} locales`
     })}
-    ${summaryChipsHtml({ marca: marca.key, regional: regional.nombre, zonal: zonal.nombre })}
+    ${summaryChipsHtml({ marca: marca.key, regional: state.regional, zonal: state.zonal })}
     <div class="section-label">Locales</div>
-    <div class="grid">${cards}</div>
+    <div class="grid">${cards}${addCard}</div>
   `;
 }
 
@@ -369,6 +519,45 @@ function resultadoPillHtml(resultado) {
   const map = { "Aprobado": "green", "No aprobado": "red", "Pendiente": "yellow" };
   const cls = map[resultado] || "yellow";
   return `<span class="pill ${cls}">${escapeHtml(resultado)}</span>`;
+}
+
+// ------------------------------------------------------------------
+// MODAL GENERICO DE TEXTO - alta de regional / zonal / local
+// ------------------------------------------------------------------
+function openNameModal({ title, label, placeholder, onSubmit }) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.id = "nameModalOverlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>${escapeHtml(title)}</h2>
+      <form id="nameForm">
+        <div class="field">
+          <label>${escapeHtml(label)}</label>
+          <input type="text" name="nombre" required placeholder="${escapeHtml(placeholder || "")}" autofocus>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" onclick="closeNameModal()">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector("input[name=nombre]");
+  input.focus();
+
+  document.getElementById("nameForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nombre = new FormData(e.target).get("nombre").trim();
+    if (!nombre) return;
+    const ok = await onSubmit(nombre);
+    if (ok) closeNameModal();
+  });
+}
+
+function closeNameModal() {
+  const overlay = document.getElementById("nameModalOverlay");
+  if (overlay) overlay.remove();
 }
 
 // ------------------------------------------------------------------
@@ -470,4 +659,4 @@ function render() {
 // ------------------------------------------------------------------
 // INIT
 // ------------------------------------------------------------------
-fetchAllRecords();
+fetchAll();
