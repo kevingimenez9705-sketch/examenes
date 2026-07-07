@@ -163,6 +163,11 @@ main {
   gap: 18px;
 }
 
+.grid.grid-center {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 280px));
+  justify-content: center;
+}
+
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -172,6 +177,59 @@ main {
   cursor: pointer;
   transition: box-shadow .15s, transform .15s;
   box-shadow: 0 1px 2px rgba(20,20,50,.04);
+  position: relative;
+}
+
+.card-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-delete:hover {
+  background: #fce9e9;
+  color: var(--red);
+}
+
+.card.add-card {
+  border-top: 4px dashed var(--border);
+  border-style: dashed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  box-shadow: none;
+  background: transparent;
+}
+
+.card.add-card:hover {
+  border-color: var(--accent);
+  background: var(--card-bg);
+}
+
+.add-card-inner {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.add-card-inner .add-icon {
+  font-size: 24px;
+  color: var(--accent);
+  margin-bottom: 6px;
 }
 
 .card:hover {
