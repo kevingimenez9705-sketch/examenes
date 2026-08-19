@@ -32,7 +32,7 @@ const state = {
   regionales: [],        // cache tabla regionales
   zonales: [],           // cache tabla zonales
   locales: [],           // cache tabla locales
-  loading: true
+  syncing: false          // hay un fetch a Supabase en curso (no bloquea la UI)
 };
 
 const root = document.getElementById("app");
@@ -41,44 +41,53 @@ const brandPill = document.getElementById("brandPill");
 // ------------------------------------------------------------------
 // CARGA DE DATOS
 // ------------------------------------------------------------------
+// El organigrama base (data.js) no depende de esto, así que nunca bloqueamos
+// el primer render esperando a Supabase. Las 4 consultas van en paralelo
+// (antes iban una atrás de la otra) y cada una corta sola a los 8s si
+// Supabase no responde, para que una URL mal configurada o una red lenta
+// no dejen la pantalla "Cargando..." colgada.
+const FETCH_TIMEOUT_MS = 8000;
+
+function withTimeout(query, ms = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return query.abortSignal(controller.signal).then(
+    (result) => { clearTimeout(timer); return result; },
+    (err) => { clearTimeout(timer); throw err; }
+  );
+}
+
 async function fetchAll() {
-  state.loading = true;
+  state.syncing = true;
   render();
 
+  const [examenes, regionales, zonales, locales] = await Promise.all([
+    withTimeout(supabaseClient.from(TABLE).select("*").order("fecha_examen", { ascending: false })).catch(err => ({ error: err })),
+    withTimeout(supabaseClient.from("regionales").select("*").order("orden", { ascending: true })).catch(err => ({ error: err })),
+    withTimeout(supabaseClient.from("zonales").select("*").order("orden", { ascending: true })).catch(err => ({ error: err })),
+    withTimeout(supabaseClient.from("locales").select("*").order("orden", { ascending: true })).catch(err => ({ error: err }))
+  ]);
+
   // Examenes: si falla, sí es un problema (mostramos aviso).
-  try {
-    const { data, error } = await supabaseClient
-      .from(TABLE)
-      .select("*")
-      .order("fecha_examen", { ascending: false });
-    if (error) throw error;
-    state.records = data || [];
-  } catch (err) {
-    console.error("Error cargando examenes:", err);
+  if (examenes.error) {
+    console.error("Error cargando examenes:", examenes.error);
     state.records = [];
     showToast("No se pudieron cargar los exámenes. Revisá la configuración de Supabase.");
+  } else {
+    state.records = examenes.data || [];
   }
 
   // Estructura dinamica (regionales/zonales/locales agregados a futuro):
   // si las tablas todavia no existen o fallan, no bloquea la app —
   // el organigrama base de data.js se muestra igual.
-  try {
-    const [regionales, zonales, locales] = await Promise.all([
-      supabaseClient.from("regionales").select("*").order("orden", { ascending: true }),
-      supabaseClient.from("zonales").select("*").order("orden", { ascending: true }),
-      supabaseClient.from("locales").select("*").order("orden", { ascending: true })
-    ]);
-    state.regionales = regionales.error ? [] : (regionales.data || []);
-    state.zonales = zonales.error ? [] : (zonales.data || []);
-    state.locales = locales.error ? [] : (locales.data || []);
-  } catch (err) {
-    console.warn("No se pudo leer la estructura dinámica (regionales/zonales/locales):", err);
-    state.regionales = [];
-    state.zonales = [];
-    state.locales = [];
-  }
+  if (regionales.error) console.warn("No se pudo leer 'regionales':", regionales.error);
+  if (zonales.error) console.warn("No se pudo leer 'zonales':", zonales.error);
+  if (locales.error) console.warn("No se pudo leer 'locales':", locales.error);
+  state.regionales = regionales.error ? [] : (regionales.data || []);
+  state.zonales = zonales.error ? [] : (zonales.data || []);
+  state.locales = locales.error ? [] : (locales.data || []);
 
-  state.loading = false;
+  state.syncing = false;
   render();
 }
 
@@ -698,10 +707,8 @@ function closeModal() {
 // RENDER DISPATCH
 // ------------------------------------------------------------------
 function render() {
-  if (state.loading) {
-    root.innerHTML = `<div class="loading">Cargando datos...</div>`;
-    return;
-  }
+  // El organigrama base (data.js) se pinta siempre al toque, sin esperar a
+  // Supabase; renderSyncPill() deja un indicador chico mientras se sincroniza.
   switch (state.view) {
     case "marcas": renderMarcas(); break;
     case "regionales": renderRegionales(); break;
@@ -710,6 +717,12 @@ function render() {
     case "local": renderLocalDetail(); break;
     default: renderMarcas();
   }
+  renderSyncPill();
+}
+
+function renderSyncPill() {
+  const el = document.getElementById("syncPill");
+  if (el) el.style.display = state.syncing ? "inline-flex" : "none";
 }
 
 // ------------------------------------------------------------------
