@@ -391,7 +391,7 @@ function renderMarcas() {
     return `
       <button type="button" class="brand-btn" style="--brand-accent:${marca.color};--brand-accent-light:${marca.colorClaro}" onclick="selectMarca('${marca.key}')">
         <div class="brand-btn-logo">
-          <img src="assets/logo-${marca.key}.svg" alt="${escapeHtml(marca.nombre)}">
+          <img src="assets/${marca.key}.png" alt="${escapeHtml(marca.nombre)}">
         </div>
         <div class="brand-btn-body">
           <div class="brand-btn-name">${escapeHtml(marca.nombre)}</div>

@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="Hamburguesas Extremas">
-  <text x="6" y="172" font-family="Georgia, 'Times New Roman', serif" font-weight="900" font-size="176" fill="#151515" letter-spacing="-6">E</text>
-  <text x="182" y="172" font-family="Georgia, 'Times New Roman', serif" font-weight="900" font-size="176" fill="#151515" letter-spacing="-6">T</text>
-  <path d="M95,10 Q170,105 245,195" stroke="#E31E24" stroke-width="58" stroke-linecap="round" fill="none"/>
-  <path d="M245,10 Q170,105 95,195" stroke="#E31E24" stroke-width="58" stroke-linecap="round" fill="none"/>
-</svg>
