@@ -375,30 +375,41 @@ function renderBreadcrumb() {
 // ------------------------------------------------------------------
 // VISTAS
 // ------------------------------------------------------------------
+function saludoHora() {
+  const h = new Date().getHours();
+  if (h < 6) return "Buenas noches";
+  if (h < 12) return "Buenos días";
+  if (h < 20) return "Buenas tardes";
+  return "Buenas noches";
+}
+
 function renderMarcas() {
   setBrandTheme(null);
   updateNavCrumb();
-  const cards = Object.values(ORG_DATA).map(marca => {
+  const buttons = Object.values(ORG_DATA).map(marca => {
     const filter = { marca: marca.key };
     return `
-      <div class="card" style="--card-accent:${marca.color};--card-accent-light:${marca.colorClaro}" onclick="selectMarca('${marca.key}')">
-        ${cardIconHtml(marca.sigla, marca.color, marca.colorClaro)}
-        <h3>${escapeHtml(marca.nombre)}</h3>
-        <div class="sub">${escapeHtml(marca.comercial.nombre)} · ${escapeHtml(marca.comercial.cargo)}</div>
-        ${miniStatsHtml(filter)}
-        <div class="card-link">Ver regionales →</div>
-      </div>`;
+      <button type="button" class="brand-btn" style="--brand-accent:${marca.color};--brand-accent-light:${marca.colorClaro}" onclick="selectMarca('${marca.key}')">
+        <div class="brand-btn-logo">
+          <img src="assets/logo-${marca.key}.svg" alt="${escapeHtml(marca.nombre)}">
+        </div>
+        <div class="brand-btn-body">
+          <div class="brand-btn-name">${escapeHtml(marca.nombre)}</div>
+          <div class="brand-btn-sub">${escapeHtml(marca.comercial.nombre)} · ${escapeHtml(marca.comercial.cargo)}</div>
+          ${miniStatsHtml(filter)}
+          <div class="brand-btn-cta">Ver organigrama <span>→</span></div>
+        </div>
+      </button>`;
   }).join("");
 
   root.innerHTML = `
-    ${heroHtml({
-      icon: "🎓",
-      title: "Campus de Ascensos",
-      accentWord: "Ascensos",
-      sub: "Elegí una marca para ver su organigrama y cargar exámenes de ascenso"
-    })}
+    <div class="welcome-banner">
+      <div class="welcome-eyebrow">🎓 Campus de Ascensos</div>
+      <h1>${saludoHora()}, equipo de <span class="accent-word">Capacitaciones</span></h1>
+      <p class="welcome-sub">Elegí una marca para ver su organigrama y cargar exámenes de ascenso.</p>
+    </div>
     <div class="section-label">Marcas</div>
-    <div class="grid grid-center">${cards}</div>
+    <div class="brand-buttons">${buttons}</div>
   `;
 }
 
